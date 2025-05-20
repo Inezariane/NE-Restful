@@ -1,0 +1,2518 @@
+/server/package.json
+{
+  "name": "parking-management-system",
+  "version": "1.0.0",
+  "description": "Backend for Car Parking Management System",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "jest",
+    "migrate": "sequelize-cli db:migrate",
+    "migrate:undo": "sequelize-cli db:migrate:undo"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "express": "^4.21.1",
+    "express-rate-limit": "^7.4.1",
+    "express-validator": "^7.2.0",
+    "helmet": "^8.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.13.0",
+    "pg-hstore": "^2.3.4",
+    "sequelize": "^6.37.4",
+    "swagger-ui-express": "^5.0.1",
+    "uuid": "^10.0.0",
+    "winston": "^3.14.2"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "sequelize-cli": "^6.6.2",
+    "supertest": "^7.0.0"
+  }
+}
+
+/server/config/database.js
+// Database configuration for PostgreSQL
+module.exports = {
+  development: {
+    username: 'postgres', // Replace with your PostgreSQL username
+    password: 'your_password', // Replace with your PostgreSQL password
+    database: 'parking_management',
+    host: 'localhost',
+    port: 5432,
+    dialect: 'postgres',
+    logging: false
+  },
+  test: {
+    username: 'postgres',
+    password: 'your_password',
+    database: 'parking_management_test',
+    host: 'localhost',
+    port: 5432,
+    dialect: 'postgres'
+  },
+  production: {
+    username: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+    host: process.env.DB_HOST,
+    port: process.env.DB_PORT || 5432,
+    dialect: 'postgres',
+    logging: false
+  }
+};
+
+/server/models/index.js
+// Sequelize initialization and model syncing
+const { Sequelize } = require('sequelize');
+const config = require('../config/database');
+
+const env = process.env.NODE_ENV || 'development';
+const dbConfig = config[env];
+
+const sequelize = new Sequelize(dbConfig.database, dbConfig.username, dbConfig.password, {
+  host: dbConfig.host,
+  port: dbConfig.port,
+  dialect: dbConfig.dialect,
+  logging: dbConfig.logging
+});
+
+// Load models
+const models = {
+  User: require('./user')(sequelize),
+  Parking: require('./parking')(sequelize),
+  ParkingRecord: require('./parkingRecord')(sequelize),
+  Vehicle: require('./vehicle')(sequelize)
+};
+
+// Define associations
+Object.values(models).forEach(model => {
+  if (model.associate) {
+    model.associate(models);
+  }
+});
+
+// Initialize database
+const initializeDatabase = async () => {
+  try {
+    await sequelize.authenticate();
+    console.log('Database connection established successfully.');
+    await sequelize.sync({ alter: true });
+    console.log('Database synchronized.');
+  } catch (error) {
+    console.error('Failed to initialize database:', error);
+    throw error;
+  }
+};
+
+// Export sequelize instance and models
+module.exports = {
+  sequelize,
+  models,
+  initializeDatabase
+};
+
+/server/models/user.js
+const { Model, DataTypes } = require('sequelize');
+const bcrypt = require('bcryptjs');
+
+module.exports = (sequelize) => {
+  class User extends Model {
+    static associate(models) {
+      User.hasMany(models.ParkingRecord, {
+        foreignKey: 'userId',
+        as: 'parkingRecords'
+      });
+      User.hasMany(models.Vehicle, {
+        foreignKey: 'userId',
+        as: 'vehicles'
+      });
+    }
+
+    async validatePassword(password) {
+      return bcrypt.compare(password, this.password);
+    }
+  }
+
+  User.init({
+    id: {
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true
+    },
+    firstName: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      validate: {
+        notEmpty: true
+      }
+    },
+    lastName: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      validate: {
+        notEmpty: true
+      }
+    },
+    email: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      unique: true,
+      validate: {
+        isEmail: true
+      }
+    },
+    password: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      validate: {
+        len: [6, 100]
+      }
+    },
+    role: {
+      type: DataTypes.ENUM('admin', 'user'),
+      defaultValue: 'user'
+    }
+  }, {
+    sequelize,
+    modelName: 'User',
+    hooks: {
+      beforeCreate: async (user) => {
+        if (user.password) {
+          const salt = await bcrypt.genSalt(10);
+          user.password = await bcrypt.hash(user.password, salt);
+        }
+      },
+      beforeUpdate: async (user) => {
+        if (user.changed('password')) {
+          const salt = await bcrypt.genSalt(10);
+          user.password = await bcrypt.hash(user.password, salt);
+        }
+      }
+    }
+  });
+
+  return User;
+};
+
+/server/models/parking.js
+const { Model, DataTypes } = require('sequelize');
+
+module.exports = (sequelize) => {
+  class Parking extends Model {
+    static associate(models) {
+      Parking.hasMany(models.ParkingRecord, {
+        foreignKey: 'parkingId',
+        as: 'parkingRecords'
+      });
+    }
+  }
+
+  Parking.init({
+    id: {
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true
+    },
+    code: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      unique: true
+    },
+    name: {
+      type: DataTypes.STRING,
+      allowNull: false
+    },
+    totalSpaces: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      validate: {
+        min: 1
+      }
+    },
+    availableSpaces: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      validate: {
+        min: 0
+      }
+    },
+    location: {
+      type: DataTypes.STRING,
+      allowNull: false
+    },
+    feePerHour: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false,
+      validate: {
+        min: 0
+      }
+    }
+  }, {
+    sequelize,
+    modelName: 'Parking'
+  });
+
+  return Parking;
+};
+
+/server/models/parkingRecord.js
+const { Model, DataTypes } = require('sequelize');
+
+module.exports = (sequelize) => {
+  class ParkingRecord extends Model {
+    static associate(models) {
+      ParkingRecord.belongsTo(models.Parking, {
+        foreignKey: 'parkingId',
+        as: 'parking'
+      });
+      ParkingRecord.belongsTo(models.User, {
+        foreignKey: 'userId',
+        as: 'user'
+      });
+      ParkingRecord.belongsTo(models.Vehicle, {
+        foreignKey: 'vehicleId',
+        as: 'vehicle'
+      });
+    }
+  }
+
+  ParkingRecord.init({
+    id: {
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true
+    },
+    vehicleId: {
+      type: DataTypes.UUID,
+      allowNull: false,
+      references: {
+        model: 'Vehicles',
+        key: 'id'
+      }
+    },
+    parkingId: {
+      type: DataTypes.UUID,
+      allowNull: false,
+      references: {
+        model: 'Parkings',
+        key: 'id'
+      }
+    },
+    userId: {
+      type: DataTypes.UUID,
+      allowNull: false,
+      references: {
+        model: 'Users',
+        key: 'id'
+      }
+    },
+    entryDateTime: {
+      type: DataTypes.DATE,
+      allowNull: false,
+      defaultValue: DataTypes.NOW
+    },
+    exitDateTime: {
+      type: DataTypes.DATE,
+      allowNull: true
+    },
+    chargedAmount: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false,
+      defaultValue: 0
+    },
+    ticketNumber: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      unique: true
+    }
+  }, {
+    sequelize,
+    modelName: 'ParkingRecord',
+    indexes: [
+      {
+        fields: ['vehicleId']
+      },
+      {
+        fields: ['ticketNumber']
+      }
+    ]
+  });
+
+  return ParkingRecord;
+};
+
+/server/models/vehicle.js
+const { Model, DataTypes } = require('sequelize');
+
+module.exports = (sequelize) => {
+  class Vehicle extends Model {
+    static associate(models) {
+      Vehicle.belongsTo(models.User, {
+        foreignKey: 'userId',
+        as: 'user'
+      });
+      Vehicle.hasMany(models.ParkingRecord, {
+        foreignKey: 'vehicleId',
+        as: 'parkingRecords'
+      });
+    }
+  }
+
+  Vehicle.init({
+    id: {
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true
+    },
+    plateNumber: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      unique: true,
+      validate: {
+        notEmpty: true
+      }
+    },
+    userId: {
+      type: DataTypes.UUID,
+      allowNull: false,
+      references: {
+        model: 'Users',
+        key: 'id'
+      }
+    }
+  }, {
+    sequelize,
+    modelName: 'Vehicle',
+    indexes: [
+      {
+        fields: ['plateNumber']
+      }
+    ]
+  });
+
+  return Vehicle;
+};
+
+/server/migrations/202505201050-create-users.js
+// Migration to create the users table
+'use strict';
+
+module.exports = {
+  async up(queryInterface, Sequelize) {
+    await queryInterface.createTable('Users', {
+      id: {
+        type: Sequelize.UUID,
+        defaultValue: Sequelize.UUIDV4,
+        primaryKey: true
+      },
+      firstName: {
+        type: Sequelize.STRING,
+        allowNull: false
+      },
+      lastName: {
+        type: Sequelize.STRING,
+        allowNull: false
+      },
+      email: {
+        type: Sequelize.STRING,
+        allowNull: false,
+        unique: true
+      },
+      password: {
+        type: Sequelize.STRING,
+        allowNull: false
+      },
+      role: {
+        type: Sequelize.ENUM('admin', 'user'),
+        defaultValue: 'user'
+      },
+      createdAt: {
+        type: Sequelize.DATE,
+        allowNull: false,
+        defaultValue: Sequelize.literal('CURRENT_TIMESTAMP')
+      },
+      updatedAt: {
+        type: Sequelize.DATE,
+        allowNull: false,
+        defaultValue: Sequelize.literal('CURRENT_TIMESTAMP')
+      }
+    });
+  },
+
+  async down(queryInterface, Sequelize) {
+    await queryInterface.dropTable('Users');
+  }
+};
+
+/server/migrations/202505201051-create-parkings.js
+// Migration to create the parkings table
+'use strict';
+
+module.exports = {
+  async up(queryInterface, Sequelize) {
+    await queryInterface.createTable('Parkings', {
+      id: {
+        type: Sequelize.UUID,
+        defaultValue: Sequelize.UUIDV4,
+        primaryKey: true
+      },
+      code: {
+        type: Sequelize.STRING,
+        allowNull: false,
+        unique: true
+      },
+      name: {
+        type: Sequelize.STRING,
+        allowNull: false
+      },
+      totalSpaces: {
+        type: Sequelize.INTEGER,
+        allowNull: false
+      },
+      availableSpaces: {
+        type: Sequelize.INTEGER,
+        allowNull: false
+      },
+      location: {
+        type: Sequelize.STRING,
+        allowNull: false
+      },
+      feePerHour: {
+        type: Sequelize.DECIMAL(10, 2),
+        allowNull: false
+      },
+      createdAt: {
+        type: Sequelize.DATE,
+        allowNull: false,
+        defaultValue: Sequelize.literal('CURRENT_TIMESTAMP')
+      },
+      updatedAt: {
+        type: Sequelize.DATE,
+        allowNull: false,
+        defaultValue: Sequelize.literal('CURRENT_TIMESTAMP')
+      }
+    });
+  },
+
+  async down(queryInterface, Sequelize) {
+    await queryInterface.dropTable('Parkings');
+  }
+};
+
+/server/migrations/202505201052-create-vehicles.js
+// Migration to create the vehicles table
+'use strict';
+
+module.exports = {
+  async up(queryInterface, Sequelize) {
+    await queryInterface.createTable('Vehicles', {
+      id: {
+        type: Sequelize.UUID,
+        defaultValue: Sequelize.UUIDV4,
+        primaryKey: true
+      },
+      plateNumber: {
+        type: Sequelize.STRING,
+        allowNull: false,
+        unique: true
+      },
+      userId: {
+        type: Sequelize.UUID,
+        allowNull: false,
+        references: {
+          model: 'Users',
+          key: 'id'
+        }
+      },
+      createdAt: {
+        type: Sequelize.DATE,
+        allowNull: false,
+        defaultValue: Sequelize.literal('CURRENT_TIMESTAMP')
+      },
+      updatedAt: {
+        type: Sequelize.DATE,
+        allowNull: false,
+        defaultValue: Sequelize.literal('CURRENT_TIMESTAMP')
+      }
+    });
+
+    await queryInterface.addIndex('Vehicles', ['plateNumber']);
+  },
+
+  async down(queryInterface, Sequelize) {
+    await queryInterface.dropTable('Vehicles');
+  }
+};
+
+/server/migrations/202505201053-create-parking-records.js
+// Migration to create the parking_records table
+'use strict';
+
+module.exports = {
+  async up(queryInterface, Sequelize) {
+    await queryInterface.createTable('ParkingRecords', {
+      id: {
+        type: Sequelize.UUID,
+        defaultValue: Sequelize.UUIDV4,
+        primaryKey: true
+      },
+      vehicleId: {
+        type: Sequelize.UUID,
+        allowNull: false,
+        references: {
+          model: 'Vehicles',
+          key: 'id'
+        }
+      },
+      parkingId: {
+        type: Sequelize.UUID,
+        allowNull: false,
+        references: {
+          model: 'Parkings',
+          key: 'id'
+        }
+      },
+      userId: {
+        type: Sequelize.UUID,
+        allowNull: false,
+        references: {
+          model: 'Users',
+          key: 'id'
+        }
+      },
+      entryDateTime: {
+        type: Sequelize.DATE,
+        allowNull: false,
+        defaultValue: Sequelize.literal('CURRENT_TIMESTAMP')
+      },
+      exitDateTime: {
+        type: Sequelize.DATE,
+        allowNull: true
+      },
+      chargedAmount: {
+        type: Sequelize.DECIMAL(10, 2),
+        allowNull: false,
+        defaultValue: 0
+      },
+      ticketNumber: {
+        type: Sequelize.STRING,
+        allowNull: false,
+        unique: true
+      },
+      createdAt: {
+        type: Sequelize.DATE,
+        allowNull: false,
+        defaultValue: Sequelize.literal('CURRENT_TIMESTAMP')
+      },
+      updatedAt: {
+        type: Sequelize.DATE,
+        allowNull: false,
+        defaultValue: Sequelize.literal('CURRENT_TIMESTAMP')
+      }
+    });
+
+    await queryInterface.addIndex('ParkingRecords', ['vehicleId']);
+    await queryInterface.addIndex('ParkingRecords', ['ticketNumber']);
+  },
+
+  async down(queryInterface, Sequelize) {
+    await queryInterface.dropTable('ParkingRecords');
+  }
+};
+
+/server/middleware/auth.js
+// JWT authentication middleware
+const jwt = require('jsonwebtoken');
+const logger = require('../utils/logger');
+
+const auth = (roles = []) => {
+  return async (req, res, next) => {
+    try {
+      const token = req.header('Authorization')?.replace('Bearer ', '');
+      if (!token) {
+        throw new Error('Authentication required');
+      }
+
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      req.user = decoded;
+
+      if (roles.length && !roles.includes(decoded.role)) {
+        throw new Error('Access denied');
+      }
+
+      next();
+    } catch (error) {
+      logger.error(`Auth error: ${error.message}`);
+      res.status(401).json({ error: error.message });
+    }
+  };
+};
+
+module.exports = auth;
+
+/server/middleware/error.js
+// Error handling middleware
+const logger = require('../utils/logger');
+
+const errorHandler = (err, req, res, next) => {
+  logger.error(`Error: ${err.message}`, { stack: err.stack });
+  res.status(err.status || 500).json({
+    error: err.message || 'Internal Server Error'
+  });
+};
+
+module.exports = errorHandler;
+
+/server/utils/logger.js
+// Winston logger configuration
+const winston = require('winston');
+
+const logger = winston.createLogger({
+  level: 'info',
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.json()
+  ),
+  transports: [
+    new winston.transports.File({ filename: 'logs/app.log' }),
+    new winston.transports.Console()
+  ]
+});
+
+module.exports = logger;
+
+/server/server.js
+// Main Express server
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+const swaggerUi = require('swagger-ui-express');
+const { initializeDatabase } = require('./models/index');
+const authRoutes = require('./routes/auth');
+const parkingRoutes = require('./routes/parking');
+const parkingRecordRoutes = require('./routes/parkingRecord');
+const vehicleRoutes = require('./routes/vehicle');
+const reportRoutes = require('./routes/reports');
+const errorHandler = require('./middleware/error');
+const logger = require('./utils/logger');
+
+const app = express();
+
+// Security middleware
+app.use(helmet());
+app.use(cors({
+  origin: 'http://localhost:3000',
+  credentials: true
+}));
+app.use(rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100
+}));
+app.use(express.json());
+
+// Request logging
+app.use((req, res, next) => {
+  logger.info(`${req.method} ${req.url}`);
+  next();
+});
+
+// Routes
+app.use('/api/auth', authRoutes);
+app.use('/api/parkings', parkingRoutes);
+app.use('/api/records', parkingRecordRoutes);
+app.use('/api/vehicles', vehicleRoutes);
+app.use('/api/reports', reportRoutes);
+
+// Swagger UI
+const swaggerDocument = require('./docs/swagger.json');
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
+
+// Error handling
+app.use(errorHandler);
+
+// Start server
+const startServer = async () => {
+  try {
+    await initializeDatabase();
+    app.listen(3001, () => {
+      logger.info('Server running on port 3001');
+      console.log('Server running on port 3001');
+    });
+  } catch (error) {
+    logger.error('Failed to start server:', error);
+    process.exit(1);
+  }
+};
+
+startServer();
+
+/server/routes/auth.js
+// Authentication routes
+const express = require('express');
+const { body, validationResult } = require('express-validator');
+const jwt = require('jsonwebtoken');
+const { models } = require('../models/index');
+const logger = require('../utils/logger');
+
+const router = express.Router();
+
+// Register
+router.post('/register', [
+  body('firstName').notEmpty().trim(),
+  body('lastName').notEmpty().trim(),
+  body('email').isEmail().normalizeEmail(),
+  body('password').isLength({ min: 6 }),
+  body('role').isIn(['admin', 'user']).optional()
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { firstName, lastName, email, password, role } = req.body;
+    const existingUser = await models.User.findOne({ where: { email } });
+    if (existingUser) {
+      return res.status(400).json({ error: 'Email already exists' });
+    }
+
+    const user = await models.User.create({
+      firstName,
+      lastName,
+      email,
+      password,
+      role: role || 'user'
+    });
+
+    const token = jwt.sign(
+      { id: user.id, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+
+    res.status(201).json({
+      token,
+      user: { id: user.id, firstName, lastName, email, role: user.role }
+    });
+  } catch (error) {
+    logger.error(`Registration error: ${error.message}`);
+    next(error);
+  }
+});
+
+// Login
+router.post('/login', [
+  body('email').isEmail().normalizeEmail(),
+  body('password').notEmpty()
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { email, password } = req.body;
+    const user = await models.User.findOne({ where: { email } });
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    const isMatch = await user.validatePassword(password);
+    if (!isMatch) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    const token = jwt.sign(
+      { id: user.id, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email,
+        role: user.role
+      }
+    });
+  } catch (error) {
+    logger.error(`Login error: ${error.message}`);
+    next(error);
+  }
+});
+
+module.exports = router;
+
+/server/routes/parking.js
+// Parking management routes
+const express = require('express');
+const { body, query, validationResult } = require('express-validator');
+const auth = require('../middleware/auth');
+const { models } = require('../models/index');
+const logger = require('../utils/logger');
+
+const router = express.Router();
+
+// Register parking (admin only)
+router.post('/', [
+  auth(['admin']),
+  body('code').notEmpty().trim(),
+  body('name').notEmpty().trim(),
+  body('totalSpaces').isInt({ min: 1 }),
+  body('location').notEmpty().trim(),
+  body('feePerHour').isFloat({ min: 0 })
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { code, name, totalSpaces, location, feePerHour } = req.body;
+    const existingParking = await models.Parking.findOne({ where: { code } });
+    if (existingParking) {
+      return res.status(400).json({ error: 'Parking code already exists' });
+    }
+
+    const parking = await models.Parking.create({
+      code,
+      name,
+      totalSpaces,
+      availableSpaces: totalSpaces,
+      location,
+      feePerHour
+    });
+
+    res.status(201).json(parking);
+  } catch (error) {
+    logger.error(`Parking creation error: ${error.message}`);
+    next(error);
+  }
+});
+
+// Get all parkings (paginated)
+router.get('/', [
+  query('page').optional().isInt({ min: 1 }),
+  query('limit').optional().isInt({ min: 1, max: 100 })
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const offset = (page - 1) * limit;
+
+    const { count, rows } = await models.Parking.findAndCountAll({
+      limit,
+      offset,
+      order: [['name', 'ASC']]
+    });
+
+    res.json({
+      parkings: rows,
+      totalPages: Math.ceil(count / limit),
+      currentPage: page
+    });
+  } catch (error) {
+    logger.error(`Parking fetch error: ${error.message}`);
+    next(error);
+  }
+});
+
+module.exports = router;
+
+/server/routes/parkingRecord.js
+// Parking record routes
+const express = require('express');
+const { body, query, validationResult } = require('express-validator');
+const { v4: uuidv4 } = require('uuid');
+const auth = require('../middleware/auth');
+const { models } = require('../models/index');
+const logger = require('../utils/logger');
+
+const router = express.Router();
+
+// Register car entry (admin only)
+router.post('/entry', [
+  auth(['admin']),
+  body('vehicleId').isUUID(),
+  body('parkingId').isUUID()
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { vehicleId, parkingId } = req.body;
+    const vehicle = await models.Vehicle.findByPk(vehicleId);
+    if (!vehicle) {
+      return res.status(404).json({ error: 'Vehicle not found' });
+    }
+
+    const parking = await models.Parking.findByPk(parkingId);
+    if (!parking) {
+      return res.status(404).json({ error: 'Parking not found' });
+    }
+
+    if (parking.availableSpaces <= 0) {
+      return res.status(400).json({ error: 'No available spaces' });
+    }
+
+    const ticketNumber = `TICKET-${uuidv4().slice(0, 8).toUpperCase()}`;
+    const record = await models.ParkingRecord.create({
+      vehicleId,
+      parkingId,
+      userId: vehicle.userId,
+      ticketNumber
+    });
+
+    await parking.update({ availableSpaces: parking.availableSpaces - 1 });
+
+    res.status(201).json({ record, ticket: { ticketNumber } });
+  } catch (error) {
+    logger.error(`Car entry error: ${error.message}`);
+    next(error);
+  }
+});
+
+// Register car exit
+router.post('/exit', [
+  auth(['admin', 'user']),
+  body('ticketNumber').notEmpty().trim()
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { ticketNumber } = req.body;
+    const record = await models.ParkingRecord.findOne({
+      where: { ticketNumber },
+      include: [{ model: models.Parking, as: 'parking' }]
+    });
+
+    if (!record) {
+      return res.status(404).json({ error: 'Ticket not found' });
+    }
+
+    if (record.exitDateTime) {
+      return res.status(400).json({ error: 'Car already exited' });
+    }
+
+    const exitDateTime = new Date();
+    const hoursParked = (exitDateTime - record.entryDateTime) / (1000 * 60 * 60);
+    const chargedAmount = (hoursParked * record.parking.feePerHour).toFixed(2);
+
+    await record.update({
+      exitDateTime,
+      chargedAmount
+    });
+
+    await record.parking.update({
+      availableSpaces: record.parking.availableSpaces + 1
+    });
+
+    res.json({
+      record,
+      bill: {
+        ticketNumber,
+        hoursParked: hoursParked.toFixed(2),
+        chargedAmount
+      }
+    });
+  } catch (error) {
+    logger.error(`Car exit error: ${error.message}`);
+    next(error);
+  }
+});
+
+// Get user's tickets (paginated)
+router.get('/my-tickets', [
+  auth(['admin', 'user']),
+  query('page').optional().isInt({ min: 1 }),
+  query('limit').optional().isInt({ min: 1, max: 100 })
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const offset = (page - 1) * limit;
+
+    const { count, rows } = await models.ParkingRecord.findAndCountAll({
+      where: { userId: req.user.id },
+      include: [
+        { model: models.Parking, as: 'parking' },
+        { model: models.Vehicle, as: 'vehicle' }
+      ],
+      limit,
+      offset,
+      order: [['entryDateTime', 'DESC']]
+    });
+
+    res.json({
+      tickets: rows,
+      totalPages: Math.ceil(count / limit),
+      currentPage: page
+    });
+  } catch (error) {
+    logger.error(`Ticket fetch error: ${error.message}`);
+    next(error);
+  }
+});
+
+module.exports = router;
+
+/server/routes/vehicle.js
+// Vehicle management routes
+const express = require('express');
+const { body, query, validationResult } = require('express-validator');
+const auth = require('../middleware/auth');
+const { models } = require('../models/index');
+const logger = require('../utils/logger');
+
+const router = express.Router();
+
+// Register vehicle
+router.post('/', [
+  auth(['admin', 'user']),
+  body('plateNumber').notEmpty().trim()
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { plateNumber } = req.body;
+    const existingVehicle = await models.Vehicle.findOne({ where: { plateNumber } });
+    if (existingVehicle) {
+      return res.status(400).json({ error: 'Vehicle plate number already exists' });
+    }
+
+    const vehicle = await models.Vehicle.create({
+      plateNumber,
+      userId: req.user.id
+    });
+
+    res.status(201).json(vehicle);
+  } catch (error) {
+    logger.error(`Vehicle creation error: ${error.message}`);
+    next(error);
+  }
+});
+
+// Get user's vehicles (paginated)
+router.get('/', [
+  auth(['admin', 'user']),
+  query('page').optional().isInt({ min: 1 }),
+  query('limit').optional().isInt({ min: 1, max: 100 })
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const offset = (page - 1) * limit;
+
+    const { count, rows } = await models.Vehicle.findAndCountAll({
+      where: { userId: req.user.id },
+      limit,
+      offset,
+      order: [['plateNumber', 'ASC']]
+    });
+
+    res.json({
+      vehicles: rows,
+      totalPages: Math.ceil(count / limit),
+      currentPage: page
+    });
+  } catch (error) {
+    logger.error(`Vehicle fetch error: ${error.message}`);
+    next(error);
+  }
+});
+
+// Get all vehicles with user details (admin only, for car entry)
+router.get('/all', [
+  auth(['admin']),
+  query('page').optional().isInt({ min: 1 }),
+  query('limit').optional().isInt({ min: 1, max: 100 })
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const offset = (page - 1) * limit;
+
+    const { count, rows } = await models.Vehicle.findAndCountAll({
+      include: [{ model: models.User, as: 'user', attributes: ['id', 'firstName', 'lastName'] }],
+      limit,
+      offset,
+      order: [['plateNumber', 'ASC']]
+    });
+
+    res.json({
+      vehicles: rows,
+      totalPages: Math.ceil(count / limit),
+      currentPage: page
+    });
+  } catch (error) {
+    logger.error(`All vehicles fetch error: ${error.message}`);
+    next(error);
+  }
+});
+
+module.exports = router;
+
+/server/routes/reports.js
+// Report routes
+const express = require('express');
+const { query, validationResult } = require('express-validator');
+const auth = require('../middleware/auth');
+const { models } = require('../models/index');
+const logger = require('../utils/logger');
+
+const router = express.Router();
+
+// Outgoing cars report
+router.get('/outgoing', [
+  auth(['admin']),
+  query('startDate').isISO8601().toDate(),
+  query('endDate').isISO8601().toDate(),
+  query('page').optional().isInt({ min: 1 }),
+  query('limit').optional().isInt({ min: 1, max: 100 })
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { startDate, endDate, page = 1, limit = 10 } = req.query;
+    const offset = (page - 1) * limit;
+
+    const { count, rows } = await models.ParkingRecord.findAndCountAll({
+      where: {
+        exitDateTime: {
+          [models.Sequelize.Op.between]: [startDate, endDate]
+        }
+      },
+      include: [
+        { model: models.Parking, as: 'parking' },
+        { model: models.User, as: 'user' },
+        { model: models.Vehicle, as: 'vehicle' }
+      ],
+      limit,
+      offset,
+      order: [['exitDateTime', 'DESC']]
+    });
+
+    res.json({
+      records: rows,
+      totalPages: Math.ceil(count / limit),
+      currentPage: parseInt(page)
+    });
+  } catch (error) {
+    logger.error(`Outgoing report error: ${error.message}`);
+    next(error);
+  }
+});
+
+// Entered cars report
+router.get('/entries', [
+  auth(['admin']),
+  query('startDate').isISO8601().toDate(),
+  query('endDate').isISO8601().toDate(),
+  query('page').optional().isInt({ min: 1 }),
+  query('limit').optional().isInt({ min: 1, max: 100 })
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { startDate, endDate, page = 1, limit = 10 } = req.query;
+    const offset = (page - 1) * limit;
+
+    const { count, rows } = await models.ParkingRecord.findAndCountAll({
+      where: {
+        entryDateTime: {
+          [models.Sequelize.Op.between]: [startDate, endDate]
+        }
+      },
+      include: [
+        { model: models.Parking, as: 'parking' },
+        { model: models.User, as: 'user' },
+        { model: models.Vehicle, as: 'vehicle' }
+      ],
+      limit,
+      offset,
+      order: [['entryDateTime', 'DESC']]
+    });
+
+    res.json({
+      records: rows,
+      totalPages: Math.ceil(count / limit),
+      currentPage: parseInt(page)
+    });
+  } catch (error) {
+    logger.error(`Entries report error: ${error.message}`);
+    next(error);
+  }
+});
+
+module.exports = router;
+
+/server/docs/swagger.json
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Car Parking Management System API",
+    "version": "1.0.0",
+    "description": "API for managing parking, vehicles, car entries/exits, tickets, and reports"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3001",
+      "description": "Local server"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  },
+  "paths": {
+    "/api/auth/register": {
+      "post": {
+        "summary": "Register a new user",
+        "tags": ["Auth"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "firstName": { "type": "string" },
+                  "lastName": { "type": "string" },
+                  "email": { "type": "string" },
+                  "password": { "type": "string" },
+                  "role": { "type": "string", "enum": ["admin", "user"] }
+                },
+                "required": ["firstName", "lastName", "email", "password"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "User registered successfully" },
+          "400": { "description": "Bad request" }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "summary": "Login a user",
+        "tags": ["Auth"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": { "type": "string" },
+                  "password": { "type": "string" }
+                },
+                "required": ["email", "password"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Login successful, returns JWT" },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/parkings": {
+      "post": {
+        "summary": "Register a new parking",
+        "tags": ["Parking"],
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": { "type": "string" },
+                  "name": { "type": "string" },
+                  "totalSpaces": { "type": "integer" },
+                  "location": { "type": "string" },
+                  "feePerHour": { "type": "number" }
+                },
+                "required": ["code", "name", "totalSpaces", "location", "feePerHour"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Parking created" },
+          "400": { "description": "Bad request" },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden" }
+        }
+      },
+      "get": {
+        "summary": "Get all parkings (paginated)",
+        "tags": ["Parking"],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": { "type": "integer" },
+            "description": "Page number"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer" },
+            "description": "Items per page"
+          }
+        ],
+        "responses": {
+          "200": { "description": "List of parkings" },
+          "400": { "description": "Bad request" }
+        }
+      }
+    },
+    "/api/vehicles": {
+      "post": {
+        "summary": "Register a new vehicle",
+        "tags": ["Vehicle"],
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "plateNumber": { "type": "string" }
+                },
+                "required": ["plateNumber"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Vehicle created" },
+          "400": { "description": "Bad request" },
+          "401": { "description": "Unauthorized" }
+        }
+      },
+      "get": {
+        "summary": "Get user's vehicles (paginated)",
+        "tags": ["Vehicle"],
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": { "type": "integer" },
+            "description": "Page number"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer" },
+            "description": "Items per page"
+          }
+        ],
+        "responses": {
+          "200": { "description": "List of vehicles" },
+          "400": { "description": "Bad request" },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/vehicles/all": {
+      "get": {
+        "summary": "Get all vehicles with user details (admin only)",
+        "tags": ["Vehicle"],
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": { "type": "integer" },
+            "description": "Page number"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer" },
+            "description": "Items per page"
+          }
+        ],
+        "responses": {
+          "200": { "description": "List of vehicles with user details" },
+          "400": { "description": "Bad request" },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden" }
+        }
+      }
+    },
+    "/api/records/entry": {
+      "post": {
+        "summary": "Register car entry (admin only)",
+        "tags": ["Parking Record"],
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "vehicleId": { "type": "string", "format": "uuid" },
+                  "parkingId": { "type": "string", "format": "uuid" }
+                },
+                "required": ["vehicleId", "parkingId"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Car entry registered" },
+          "400": { "description": "Bad request" },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden" },
+          "404": { "description": "Vehicle or parking not found" }
+        }
+      }
+    },
+    "/api/records/exit": {
+      "post": {
+        "summary": "Register car exit",
+        "tags": ["Parking Record"],
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "ticketNumber": { "type": "string" }
+                },
+                "required": ["ticketNumber"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Car exit registered" },
+          "400": { "description": "Bad request" },
+          "401": { "description": "Unauthorized" },
+          "404": { "description": "Ticket not found" }
+        }
+      }
+    },
+    "/api/records/my-tickets": {
+      "get": {
+        "summary": "Get user's tickets (paginated)",
+        "tags": ["Parking Record"],
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": { "type": "integer" },
+            "description": "Page number"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer" },
+            "description": "Items per page"
+          }
+        ],
+        "responses": {
+          "200": { "description": "List of tickets" },
+          "400": { "description": "Bad request" },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/reports/outgoing": {
+      "get": {
+        "summary": "Get outgoing cars report",
+        "tags": ["Reports"],
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "startDate",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "format": "date-time" }
+          },
+          {
+            "name": "endDate",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "format": "date-time" }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": { "type": "integer" }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Outgoing cars report" },
+          "400": { "description": "Bad request" },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden" }
+        }
+      }
+    },
+    "/api/reports/entries": {
+      "get": {
+        "summary": "Get entered cars report",
+        "tags": ["Reports"],
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "startDate",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "format": "date-time" }
+          },
+          {
+            "name": "endDate",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "format": "date-time" }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": { "type": "integer" }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Entered cars report" },
+          "400": { "description": "Bad request" },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden" }
+        }
+      }
+    }
+  }
+}
+
+/server/.env
+# Environment variables
+JWT_SECRET=your_jwt_secret
+NODE_ENV=development
+/client/package.json
+{
+  "name": "parking-management-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "axios": "^1.7.7",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.27.0",
+    "tailwindcss": "^3.4.14"
+  },
+  "scripts": {
+    "start": "vite",
+    "build": "vite build"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.2",
+    "vite": "^5.4.8"
+  }
+}
+
+/client/vite.config.js
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    port: 3000
+  }
+});
+
+/client/index.html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Car Parking Management System</title>
+  <link href="/src/output.css" rel="stylesheet">
+</head>
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.jsx"></script>
+</body>
+</html>
+
+/client/src/main.jsx
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import { BrowserRouter } from 'react-router-dom';
+import App from './App';
+import './index.css';
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <BrowserRouter>
+    <App />
+  </BrowserRouter>
+);
+
+/client/src/App.jsx
+import { Routes, Route } from 'react-router-dom';
+import Navbar from './components/Navbar';
+import Home from './pages/Home';
+import Register from './pages/Register';
+import Login from './pages/Login';
+import ParkingList from './pages/ParkingList';
+import ParkingForm from './pages/ParkingForm';
+import CarEntry from './pages/CarEntry';
+import CarExit from './pages/CarExit';
+import Reports from './pages/Reports';
+import { AuthProvider } from './context/AuthContext';
+
+function App() {
+  return (
+    <AuthProvider>
+      <div className="min-h-screen bg-gray-100">
+        <Navbar />
+        <div className="container mx-auto p-4">
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/register" element={<Register />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/parkings" element={<ParkingList />} />
+            <Route path="/parkings/new" element={<ParkingForm />} />
+            <Route path="/records/entry" element={<CarEntry />} />
+            <Route path="/records/exit" element={<CarExit />} />
+            <Route path="/reports" element={<Reports />} />
+          </Routes>
+        </div>
+      </div>
+    </AuthProvider>
+  );
+}
+
+export default App;
+
+/client/src/context/AuthContext.jsx
+import React, { createContext, useState, useEffect } from 'react';
+import axios from 'axios';
+
+export const AuthContext = createContext();
+
+export const AuthProvider = ({ children }) => {
+  const [user, setUser] = useState(null);
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      axios.get('http://localhost:3001/api/auth/me', {
+        headers: { Authorization: `Bearer ${token}` }
+      }).then(response => {
+        setUser(response.data.user);
+      }).catch(() => {
+        localStorage.removeItem('token');
+        setUser(null);
+      });
+    }
+  }, []);
+
+  const login = async (email, password) => {
+    const response = await axios.post('http://localhost:3001/api/auth/login', {
+      email,
+      password
+    });
+    localStorage.setItem('token', response.data.token);
+    setUser(response.data.user);
+  };
+
+  const register = async (firstName, lastName, email, password, role) => {
+    const response = await axios.post('http://localhost:3001/api/auth/register', {
+      firstName,
+      lastName,
+      email,
+      password,
+      role
+    });
+    localStorage.setItem('token', response.data.token);
+    setUser(response.data.user);
+  };
+
+  const logout = () => {
+    localStorage.removeItem('token');
+    setUser(null);
+  };
+
+  return (
+    <AuthContext.Provider value={{ user, login, register, logout }}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+/client/src/components/Navbar.jsx
+import { useContext } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { AuthContext } from '../context/AuthContext';
+
+function Navbar() {
+  const { user, logout } = useContext(AuthContext);
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
+
+  return (
+    <nav className="bg-blue-600 p-4 text-white">
+      <div className="container mx-auto flex justify-between items-center">
+        <Link to="/" className="text-xl font-bold">Parking System</Link>
+        <div className="space-x-4">
+          {user ? (
+            <>
+              <Link to="/parkings">Parkings</Link>
+              {user.role === 'admin' && (
+                <Link to="/parkings/new">Add Parking</Link>
+              )}
+              <Link to="/records/entry">Car Entry</Link>
+              <Link to="/records/exit">Car Exit</Link>
+              {user.role === 'admin' && (
+                <Link to="/reports">Reports</Link>
+              )}
+              <button onClick={handleLogout} className="bg-red-500 px-3 py-1 rounded">Logout</button>
+            </>
+          ) : (
+            <>
+              <Link to="/register">Register</Link>
+              <Link to="/login">Login</Link>
+            </>
+          )}
+        </div>
+      </div>
+    </nav>
+  );
+}
+
+export default Navbar;
+
+/client/src/pages/Home.jsx
+function Home() {
+  return (
+    <div className="text-center">
+      <h1 className="text-3xl font-bold mb-4">Welcome to Car Parking Management System</h1>
+      <p className="text-lg">Manage parkings, track car entries and exits, and generate reports efficiently.</p>
+    </div>
+  );
+}
+
+export default Home;
+
+/client/src/pages/Register.jsx
+import { useState, useContext } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { AuthContext } from '../context/AuthContext';
+
+function Register() {
+  const [formData, setFormData] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    password: '',
+    role: 'user'
+  });
+  const [error, setError] = useState('');
+  const { register } = useContext(AuthContext);
+  const navigate = useNavigate();
+
+  const handleChange = (e) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await register(
+        formData.firstName,
+        formData.lastName,
+        formData.email,
+        formData.password,
+        formData.role
+      );
+      navigate('/parkings');
+    } catch (err) {
+      setError(err.response?.data?.error || 'Registration failed');
+    }
+  };
+
+  return (
+    <div className="max-w-md mx-auto bg-white p-6 rounded-lg shadow-md">
+      <h2 className="text-2xl font-bold mb-4">Register</h2>
+      {error && <p className="text-red-500 mb-4">{error}</p>}
+      <form onSubmit={handleSubmit}>
+        <div className="mb-4">
+          <label className="block text-sm font-medium mb-1">First Name</label>
+          <input
+            type="text"
+            name="firstName"
+            value={formData.firstName}
+            onChange={handleChange}
+            className="w-full border rounded px-3 py-2"
+            required
+          />
+        </div>
+        <div className="mb-4">
+          <label className="block text-sm font-medium mb-1">Last Name</label>
+          <input
+            type="text"
+            name="lastName"
+            value={formData.lastName}
+            onChange={handleChange}
+            className="w-full border rounded px-3 py-2"
+            required
+          />
+        </div>
+        <div className="mb-4">
+          <label className="block text-sm font-medium mb-1">Email</label>
+          <input
+            type="email"
+            name="email"
+            value={formData.email}
+            onChange={handleChange}
+            className="w-full border rounded px-3 py-2"
+            required
+          />
+        </div>
+        <div className="mb-4">
+          <label className="block text-sm font-medium mb-1">Password</label>
+          <input
+            type="password"
+            name="password"
+            value={formData.password}
+            onChange={handleChange}
+            className="w-full border rounded px-3 py-2"
+            required
+            minLength="6"
+          />
+        </div>
+        <div className="mb-4">
+          <label className="block text-sm font-medium mb-1">Role</label>
+          <select
+            name="role"
+            value={formData.role}
+            onChange={handleChange}
+            className="w-full border rounded px-3 py-2"
+          >
+            <option value="user">User</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+        <button type="submit" className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700">
+          Register
+        </button>
+      </form>
+    </div>
+  );
+}
+
+export default Register;
+
+/client/src/pages/Login.jsx
+import { useState, useContext } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { AuthContext } from '../context/AuthContext';
+
+function Login() {
+  const [formData, setFormData] = useState({
+    email: '',
+    password: ''
+  });
+  const [error, setError] = useState('');
+  const { login } = useContext(AuthContext);
+  const navigate = useNavigate();
+
+  const handleChange = (e) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await login(formData.email, formData.password);
+      navigate('/parkings');
+    } catch (err) {
+      setError(err.response?.data?.error || 'Login failed');
+    }
+  };
+
+  return (
+    <div className="max-w-md mx-auto bg-white p-6 rounded-lg shadow-md">
+      <h2 className="text-2xl font-bold mb-4">Login</h2>
+      {error && <p className="text-red-500 mb-4">{error}</p>}
+      <form onSubmit={handleSubmit}>
+        <div className="mb-4">
+          <label className="block text-sm font-medium mb-1">Email</label>
+          <input
+            type="email"
+            name="email"
+            value={formData.email}
+            onChange={handleChange}
+            className="w-full border rounded px-3 py-2"
+            required
+          />
+        </div>
+        <div className="mb-4">
+          <label className="block text-sm font-medium mb-1">Password</label>
+          <input
+            type="password"
+            name="password"
+            value={formData.password}
+            onChange={handleChange}
+            className="w-full border rounded px-3 py-2"
+            required
+          />
+        </div>
+        <button type="submit" className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700">
+          Login
+        </button>
+      </form>
+    </div>
+  );
+}
+
+export default Login;
+
+/client/src/pages/ParkingList.jsx
+import { useState, useEffect } from 'react';
+import axios from 'axios';
+
+function ParkingList() {
+  const [parkings, setParkings] = useState([]);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const fetchParkings = async () => {
+      try {
+        const response = await axios.get(`http://localhost:3001/api/parkings?page=${page}&limit=10`);
+        setParkings(response.data.parkings);
+        setTotalPages(response.data.totalPages);
+      } catch (err) {
+        setError('Failed to fetch parkings');
+      }
+    };
+    fetchParkings();
+  }, [page]);
+
+  return (
+    <div>
+      <h2 className="text-2xl font-bold mb-4">Available Parkings</h2>
+      {error && <p className="text-red-500 mb-4">{error}</p>}
+      <div className="overflow-x-auto">
+        <table className="min-w-full bg-white rounded-lg shadow">
+          <thead>
+            <tr className="bg-gray-200">
+              <th className="py-2 px-4">Code</th>
+              <th className="py-2 px-4">Name</th>
+              <th className="py-2 px-4">Available Spaces</th>
+              <th className="py-2 px-4">Location</th>
+              <th className="py-2 px-4">Fee/Hour</th>
+            </tr>
+          </thead>
+          <tbody>
+            {parkings.map(parking => (
+              <tr key={parking.id} className="border-t">
+                <td className="py-2 px-4">{parking.code}</td>
+                <td className="py-2 px-4">{parking.name}</td>
+                <td className="py-2 px-4">{parking.availableSpaces}/{parking.totalSpaces}</td>
+                <td className="py-2 px-4">{parking.location}</td>
+                <td className="py-2 px-4">${parking.feePerHour}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="flex justify-between mt-4">
+        <button
+          onClick={() => setPage(prev => Math.max(prev - 1, 1))}
+          disabled={page === 1}
+          className="bg-blue-600 text-white px-4 py-2 rounded disabled:bg-gray-400"
+        >
+          Previous
+        </button>
+        <span>Page {page} of {totalPages}</span>
+        <button
+          onClick={() => setPage(prev => Math.min(prev + 1, totalPages))}
+          disabled={page === totalPages}
+          className="bg-blue-600 text-white px-4 py-2 rounded disabled:bg-gray-400"
+        >
+          Next
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export default ParkingList;
+
+/client/src/pages/ParkingForm.jsx
+import { useState, useContext } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { AuthContext } from '../context/AuthContext';
+import axios from 'axios';
+
+function ParkingForm() {
+  const [formData, setFormData] = useState({
+    code: '',
+    name: '',
+    totalSpaces: '',
+    location: '',
+    feePerHour: ''
+  });
+  const [error, setError] = useState('');
+  const { user } = useContext(AuthContext);
+  const navigate = useNavigate();
+
+  const handleChange = (e) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await axios.post('http://localhost:3001/api/parkings', formData, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      });
+      navigate('/parkings');
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to create parking');
+    }
+  };
+
+  if (user?.role !== 'admin') {
+    return <p className="text-red-500">Access denied</p>;
+  }
+
+  return (
+    <div className="max-w-md mx-auto bg-white p-6 rounded-lg shadow-md">
+      <h2 className="text-2xl font-bold mb-4">Add New Parking</h2>
+      {error && <p className="text-red-500 mb-4">{error}</p>}
+      <form onSubmit={handleSubmit}>
+        <div className="mb-4">
+          <label className="block text-sm font-medium mb-1">Code</label>
+          <input
+            type="text"
+            name="code"
+            value={formData.code}
+            onChange={handleChange}
+            className="w-full border rounded px-3 py-2"
+            required
+          />
+        </div>
+        <div className="mb-4">
+          <label className="block text-sm font-medium mb-1">Name</label>
+          <input
+            type="text"
+            name="name"
+            value={formData.name}
+            onChange={handleChange}
+            className="w-full border rounded px-3 py-2"
+            required
+          />
+        </div>
+        <div className="mb-4">
+          <label className="block text-sm font-medium mb-1">Total Spaces</label>
+          <input
+            type="number"
+            name="totalSpaces"
+            value={formData.totalSpaces}
+            onChange={handleChange}
+            className="w-full border rounded px-3 py-2"
+            required
+            min="1"
+          />
+        </div>
+        <div className="mb-4">
+          <label className="block text-sm font-medium mb-1">Location</label>
+          <input
+            type="text"
+            name="location"
+            value={formData.location}
+            onChange={handleChange}
+            className="w-full border rounded px-3 py-2"
+            required
+          />
+        </div>
+        <div className="mb-4">
+          <label className="block text-sm font-medium mb-1">Fee per Hour</label>
+          <input
+            type="number"
+            name="feePerHour"
+            value={formData.feePerHour}
+            onChange={handleChange}
+            className="w-full border rounded px-3 py-2"
+            required
+            min="0"
+            step="0.01"
+          />
+        </div>
+        <button type="submit" className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700">
+          Add Parking
+        </button>
+      </form>
+    </div>
+  );
+}
+
+export default ParkingForm;
+
+/client/src/pages/CarEntry.jsx
+import { useState, useEffect, useContext } from 'react';
+import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
+import { AuthContext } from '../context/AuthContext';
+
+function CarEntry() {
+  const [formData, setFormData] = useState({
+    plateNumber: '',
+    parkingId: ''
+  });
+  const [parkings, setParkings] = useState([]);
+  const [error, setError] = useState('');
+  const { user } = useContext(AuthContext);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const fetchParkings = async () => {
+      try {
+        const response = await axios.get('http://localhost:3001/api/parkings');
+        setParkings(response.data.parkings);
+      } catch (err) {
+        setError('Failed to fetch parkings');
+      }
+    };
+    fetchParkings();
+  }, []);
+
+  const handleChange = (e) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const response = await axios.post('http://localhost:3001/api/records/entry', formData, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      });
+      alert(`Car entered successfully! Ticket: ${response.data.ticket.ticketNumber}`);
+      navigate('/parkings');
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to register car entry');
+    }
+  };
+
+  if (!user) {
+    return <p className="text-red-500">Please login</p>;
+  }
+
+  return (
+    <div className="max-w-md mx-auto bg-white p-6 rounded-lg shadow-md">
+      <h2 className="text-2xl font-bold mb-4">Register Car Entry</h2>
+      {error && <p className="text-red-500 mb-4">{error}</p>}
+      <form onSubmit={handleSubmit}>
+        <div className="mb-4">
+          <label className="block text-sm font-medium mb-1">Plate Number</label>
+          <input
+            type="text"
+            name="plateNumber"
+            value={formData.plateNumber}
+            onChange={handleChange}
+            className="w-full border rounded px-3 py-2"
+            required
+          />
+        </div>
+        <div className="mb-4">
+          <label className="block text-sm font-medium mb-1">Parking</label>
+          <select
+            name="parkingId"
+            value={formData.parkingId}
+            onChange={handleChange}
+            className="w-full border rounded px-3 py-2"
+            required
+          >
+            <option value="">Select Parking</option>
+            {parkings.map(parking => (
+              <option key={parking.id} value={parking.id}>
+                {parking.name} ({parking.availableSpaces} spaces)
+              </option>
+            ))}
+          </select>
+        </div>
+        <button type="submit" className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700">
+          Register Entry
+        </button>
+      </form>
+    </div>
+  );
+}
+
+export default CarEntry;
+
+/client/src/pages/CarExit.jsx
+import { useState, useContext } from 'react';
+import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
+import { AuthContext } from '../context/AuthContext';
+
+function CarExit() {
+  const [ticketNumber, setTicketNumber] = useState('');
+  const [error, setError] = useState('');
+  const [bill, setBill] = useState(null);
+  const { user } = useContext(AuthContext);
+  const navigate = useNavigate();
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const response = await axios.post('http://localhost:3001/api/records/exit', { ticketNumber }, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      });
+      setBill(response.data.bill);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to register car exit');
+    }
+  };
+
+  if (!user) {
+    return <p className="text-red-500">Please login</p>;
+  }
+
+  return (
+    <div className="max-w-md mx-auto bg-white p-6 rounded-lg shadow-md">
+      <h2 className="text-2xl font-bold mb-4">Register Car Exit</h2>
+      {error && <p className="text-red-500 mb-4">{error}</p>}
+      {!bill ? (
+        <form onSubmit={handleSubmit}>
+          <div className="mb-4">
+            <label className="block text-sm font-medium mb-1">Ticket Number</label>
+            <input
+              type="text"
+              value={ticketNumber}
+              onChange={(e) => setTicketNumber(e.target.value)}
+              className="w-full border rounded px-3 py-2"
+              required
+            />
+          </div>
+          <button type="submit" className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700">
+            Register Exit
+          </button>
+        </form>
+      ) : (
+        <div className="text-center">
+          <h3 className="text-xl font-bold mb-2">Bill</h3>
+          <p>Ticket: {bill.ticketNumber}</p>
+          <p>Hours Parked: {bill.hoursParked}</p>
+          <p>Total Charged: ${bill.chargedAmount}</p>
+          <button
+            onClick={() => navigate('/parkings')}
+            className="mt-4 bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700"
+          >
+            Back to Parkings
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default CarExit;
+
+/client/src/pages/Reports.jsx
+import { useState, useEffect, useContext } from 'react';
+import axios from 'axios';
+import { AuthContext } from '../context/AuthContext';
+
+function Reports() {
+  const [reportType, setReportType] = useState('outgoing');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [records, setRecords] = useState([]);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [error, setError] = useState('');
+  const { user } = useContext(AuthContext);
+
+  useEffect(() => {
+    if (startDate && endDate) {
+      fetchReport();
+    }
+  }, [reportType, startDate, endDate, page]);
+
+  const fetchReport = async () => {
+    try {
+      const response = await axios.get(`http://localhost:3001/api/reports/${reportType}`, {
+        params: { startDate, endDate, page, limit: 10 },
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      });
+      setRecords(response.data.records);
+      setTotalPages(response.data.totalPages);
+    } catch (err) {
+      setError('Failed to fetch report');
+    }
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    setPage(1);
+    fetchReport();
+  };
+
+  if (user?.role !== 'admin') {
+    return <p className="text-red-500">Access denied</p>;
+  }
+
+  return (
+    <div>
+      <h2 className="text-2xl font-bold mb-4">Reports</h2>
+      {error && <p className="text-red-500 mb-4">{error}</p>}
+      <form onSubmit={handleSubmit} className="mb-6 flex flex-col sm:flex-row gap-4">
+        <div>
+          <label className="block text-sm font-medium mb-1">Report Type</label>
+          <select
+            value={reportType}
+            onChange={(e) => setReportType(e.target.value)}
+            className="border rounded px-3 py-2"
+          >
+            <option value="outgoing">Outgoing Cars</option>
+            <option value="entries">Entered Cars</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">Start Date</label>
+          <input
+            type="datetime-local"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            className="border rounded px-3 py-2"
+            required
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">End Date</label>
+          <input
+            type="datetime-local"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            className="border rounded px-3 py-2"
+            required
+          />
+        </div>
+        <button type="submit" className="bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700">
+          Generate Report
+        </button>
+      </form>
+      <div className="overflow-x-auto">
+        <table className="min-w-full bg-white rounded-lg shadow">
+          <thead>
+            <tr className="bg-gray-200">
+              <th className="py-2 px-4">Ticket</th>
+              <th className="py-2 px-4">Plate Number</th>
+              <th className="py-2 px-4">Parking</th>
+              <th className="py-2 px-4">User</th>
+              <th className="py-2 px-4">Entry</th>
+              <th className="py-2 px-4">Exit</th>
+              <th className="py-2 px-4">Charged</th>
+            </tr>
+          </thead>
+          <tbody>
+            {records.map(record => (
+              <tr key={record.id} className="border-t">
+                <td className="py-2 px-4">{record.ticketNumber}</td>
+                <td className="py-2 px-4">{record.plateNumber}</td>
+                <td className="py-2 px-4">{record.parking.name}</td>
+                <td className="py-2 px-4">{record.user.firstName} {record.user.lastName}</td>
+                <td className="py-2 px-4">{new Date(record.entryDateTime).toLocaleString()}</td>
+                <td className="py-2 px-4">{record.exitDateTime ? new Date(record.exitDateTime).toLocaleString() : '-'}</td>
+                <td className="py-2 px-4">${record.chargedAmount}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="flex justify-between mt-4">
+        <button
+          onClick={() => setPage(prev => Math.max(prev - 1, 1))}
+          disabled={page === 1}
+          className="bg-blue-600 text-white px-4 py-2 rounded disabled:bg-gray-400"
+        >
+          Previous
+        </button>
+        <span>Page {page} of {totalPages}</span>
+        <button
+          onClick={() => setPage(prev => Math.min(prev + 1, totalPages))}
+          disabled={page === totalPages}
+          className="bg-blue-600 text-white px-4 py-2 rounded disabled:bg-gray-400"
+        >
+          Next

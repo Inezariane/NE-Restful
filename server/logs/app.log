@@ -1,0 +1,26 @@
+{"level":"info","message":"Server running on port 3001","timestamp":"2025-05-20T09:17:00.389Z"}
+{"level":"info","message":"GET /api-docs","timestamp":"2025-05-20T09:17:33.668Z"}
+{"level":"info","message":"GET /api-docs/","timestamp":"2025-05-20T09:17:33.677Z"}
+{"level":"info","message":"GET /api-docs/swagger-ui.css","timestamp":"2025-05-20T09:17:33.721Z"}
+{"level":"info","message":"GET /api-docs/swagger-ui-bundle.js","timestamp":"2025-05-20T09:17:33.724Z"}
+{"level":"info","message":"GET /api-docs/swagger-ui-standalone-preset.js","timestamp":"2025-05-20T09:17:33.726Z"}
+{"level":"info","message":"GET /api-docs/swagger-ui-init.js","timestamp":"2025-05-20T09:17:33.727Z"}
+{"level":"info","message":"GET /api-docs/favicon-32x32.png","timestamp":"2025-05-20T09:17:33.947Z"}
+{"level":"info","message":"POST /api/auth/register","timestamp":"2025-05-20T09:21:35.447Z"}
+{"level":"info","message":"POST /api/auth/login","timestamp":"2025-05-20T09:22:18.429Z"}
+{"level":"info","message":"POST /api/parkings","timestamp":"2025-05-20T09:22:35.681Z"}
+{"level":"error","message":"Auth error: Authentication required","timestamp":"2025-05-20T09:22:35.682Z"}
+{"level":"info","message":"POST /api/parkings","timestamp":"2025-05-20T09:23:22.068Z"}
+{"level":"error","message":"Auth error: Access denied","timestamp":"2025-05-20T09:23:22.071Z"}
+{"level":"info","message":"GET /api/parkings?page=1&limit=5","timestamp":"2025-05-20T09:23:41.508Z"}
+{"level":"info","message":"POST /api/records/entry","timestamp":"2025-05-20T09:24:04.517Z"}
+{"level":"info","message":"POST /api/auth/register","timestamp":"2025-05-20T09:26:04.641Z"}
+{"level":"info","message":"POST /api/auth/login","timestamp":"2025-05-20T09:26:21.949Z"}
+{"level":"info","message":"POST /api/parkings","timestamp":"2025-05-20T09:27:12.981Z"}
+{"level":"info","message":"GET /api/parkings?page=1&limit=5","timestamp":"2025-05-20T09:27:30.771Z"}
+{"level":"info","message":"POST /api/records/entry","timestamp":"2025-05-20T09:27:57.134Z"}
+{"level":"info","message":"GET /api/parkings?page=1&limit=5","timestamp":"2025-05-20T09:28:48.199Z"}
+{"level":"info","message":"POST /api/records/exit","timestamp":"2025-05-20T09:29:01.325Z"}
+{"level":"info","message":"GET /api/reports/outgoing?startDate=2025-05-20&endDate=2025-05-20","timestamp":"2025-05-20T09:29:58.504Z"}
+{"level":"error","message":"Outgoing report error: Cannot read properties of undefined (reading 'Op')","timestamp":"2025-05-20T09:29:58.506Z"}
+{"level":"error","message":"Error: Cannot read properties of undefined (reading 'Op')","stack":"TypeError: Cannot read properties of undefined (reading 'Op')\n    at C:\\Users\\ADMIN\\Documents\\NE\\server\\routes\\reports.js:29:29\n    at Layer.handle [as handle_request] (C:\\Users\\ADMIN\\Documents\\NE\\server\\node_modules\\express\\lib\\router\\layer.js:95:5)\n    at next (C:\\Users\\ADMIN\\Documents\\NE\\server\\node_modules\\express\\lib\\router\\route.js:149:13)\n    at middleware (C:\\Users\\ADMIN\\Documents\\NE\\server\\node_modules\\express-validator\\lib\\middlewares\\check.js:16:13)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)","timestamp":"2025-05-20T09:29:58.507Z"}

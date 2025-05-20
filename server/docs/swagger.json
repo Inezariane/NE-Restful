@@ -1,0 +1,364 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Car Parking Management System API",
+    "version": "1.0.0",
+    "description": "API for managing parking, vehicles, car entries/exits, tickets, and reports"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3001",
+      "description": "Local server"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  },
+  "paths": {
+    "/api/auth/register": {
+      "post": {
+        "summary": "Register a new user",
+        "tags": ["Auth"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "firstName": { "type": "string" },
+                  "lastName": { "type": "string" },
+                  "email": { "type": "string" },
+                  "password": { "type": "string" },
+                  "role": { "type": "string", "enum": ["admin", "user"] }
+                },
+                "required": ["firstName", "lastName", "email", "password"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "User registered successfully" },
+          "400": { "description": "Bad request" }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "summary": "Login a user",
+        "tags": ["Auth"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": { "type": "string" },
+                  "password": { "type": "string" }
+                },
+                "required": ["email", "password"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Login successful, returns JWT" },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/parkings": {
+      "post": {
+        "summary": "Register a new parking",
+        "tags": ["Parking"],
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": { "type": "string" },
+                  "name": { "type": "string" },
+                  "totalSpaces": { "type": "integer" },
+                  "location": { "type": "string" },
+                  "feePerHour": { "type": "number" }
+                },
+                "required": ["code", "name", "totalSpaces", "location", "feePerHour"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Parking created" },
+          "400": { "description": "Bad request" },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden" }
+        }
+      },
+      "get": {
+        "summary": "Get all parkings (paginated)",
+        "tags": ["Parking"],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": { "type": "integer" },
+            "description": "Page number"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer" },
+            "description": "Items per page"
+          }
+        ],
+        "responses": {
+          "200": { "description": "List of parkings" },
+          "400": { "description": "Bad request" }
+        }
+      }
+    },
+    "/api/vehicles": {
+      "post": {
+        "summary": "Register a new vehicle",
+        "tags": ["Vehicle"],
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "plateNumber": { "type": "string" }
+                },
+                "required": ["plateNumber"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Vehicle created" },
+          "400": { "description": "Bad request" },
+          "401": { "description": "Unauthorized" }
+        }
+      },
+      "get": {
+        "summary": "Get user's vehicles (paginated)",
+        "tags": ["Vehicle"],
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": { "type": "integer" },
+            "description": "Page number"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer" },
+            "description": "Items per page"
+          }
+        ],
+        "responses": {
+          "200": { "description": "List of vehicles" },
+          "400": { "description": "Bad request" },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/vehicles/all": {
+      "get": {
+        "summary": "Get all vehicles with user details (admin only)",
+        "tags": ["Vehicle"],
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": { "type": "integer" },
+            "description": "Page number"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer" },
+            "description": "Items per page"
+          }
+        ],
+        "responses": {
+          "200": { "description": "List of vehicles with user details" },
+          "400": { "description": "Bad request" },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden" }
+        }
+      }
+    },
+    "/api/records/entry": {
+      "post": {
+        "summary": "Register car entry (admin only)",
+        "tags": ["Parking Record"],
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "vehicleId": { "type": "string", "format": "uuid" },
+                  "parkingId": { "type": "string", "format": "uuid" }
+                },
+                "required": ["vehicleId", "parkingId"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Car entry registered" },
+          "400": { "description": "Bad request" },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden" },
+          "404": { "description": "Vehicle or parking not found" }
+        }
+      }
+    },
+    "/api/records/exit": {
+      "post": {
+        "summary": "Register car exit",
+        "tags": ["Parking Record"],
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "ticketNumber": { "type": "string" }
+                },
+                "required": ["ticketNumber"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Car exit registered" },
+          "400": { "description": "Bad request" },
+          "401": { "description": "Unauthorized" },
+          "404": { "description": "Ticket not found" }
+        }
+      }
+    },
+    "/api/records/my-tickets": {
+      "get": {
+        "summary": "Get user's tickets (paginated)",
+        "tags": ["Parking Record"],
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": { "type": "integer" },
+            "description": "Page number"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer" },
+            "description": "Items per page"
+          }
+        ],
+        "responses": {
+          "200": { "description": "List of tickets" },
+          "400": { "description": "Bad request" },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/reports/outgoing": {
+      "get": {
+        "summary": "Get outgoing cars report",
+        "tags": ["Reports"],
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "startDate",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "format": "date-time" }
+          },
+          {
+            "name": "endDate",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "format": "date-time" }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": { "type": "integer" }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Outgoing cars report" },
+          "400": { "description": "Bad request" },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden" }
+        }
+      }
+    },
+    "/api/reports/entries": {
+      "get": {
+        "summary": "Get entered cars report",
+        "tags": ["Reports"],
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "startDate",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "format": "date-time" }
+          },
+          {
+            "name": "endDate",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "format": "date-time" }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": { "type": "integer" }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Entered cars report" },
+          "400": { "description": "Bad request" },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden" }
+        }
+      }
+    }
+  }
+}
