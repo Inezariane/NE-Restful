@@ -26,15 +26,20 @@ function Navbar() {
             <>
               <Link to="/parkings">Parkings</Link>
               <Link to="/vehicles">Vehicles</Link>
-              <Link to="/tickets">My Tickets</Link>
+              {user.role === 'user' && (
+                <>
+                  <Link to="/vehicles/new">Add Vehicle</Link>
+                  <Link to="/tickets">My Tickets</Link>
+                </>
+              )}
               {user.role === 'admin' && (
                 <>
                   <Link to="/parkings/new">Add Parking</Link>
                   <Link to="/records/entry">Car Entry</Link>
+                  <Link to="/records/exit">Car Exit</Link>
                   <Link to="/reports">Reports</Link>
                 </>
               )}
-              <Link to="/records/exit">Car Exit</Link>
               <button onClick={handleLogout} className="bg-red-500 px-3 py-1 rounded">Logout</button>
             </>
           ) : (

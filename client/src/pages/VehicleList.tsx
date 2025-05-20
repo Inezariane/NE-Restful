@@ -5,6 +5,7 @@ import axios from 'axios';
 interface Vehicle {
   id: string;
   plateNumber: string;
+  user?: { firstName: string; lastName: string };
 }
 
 function VehicleList() {
@@ -16,10 +17,14 @@ function VehicleList() {
 
   useEffect(() => {
     if (!context) throw new Error('AuthContext must be used within an AuthProvider');
+    const { user } = context;
+    if (!user) return;
+
     const fetchVehicles = async () => {
       try {
+        const endpoint = user.role === 'admin' ? '/api/vehicles/all' : '/api/vehicles';
         const response = await axios.get(
-          `http://localhost:3001/api/vehicles?page=${page}&limit=10`,
+          `http://localhost:3001${endpoint}?page=${page}&limit=10`,
           { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
         );
         setVehicles(response.data.vehicles);
@@ -33,19 +38,23 @@ function VehicleList() {
 
   return (
     <div className="p-4">
-      <h2 className="text-2xl font-bold mb-4">My Vehicles</h2>
+      <h2 className="text-2xl font-bold mb-4">{context?.user?.role === 'admin' ? 'All Vehicles' : 'My Vehicles'}</h2>
       {error && <p className="text-red-500 mb-4">{error}</p>}
       <div className="overflow-x-auto">
         <table className="min-w-full bg-white rounded-lg shadow">
           <thead>
             <tr className="bg-gray-200">
               <th className="py-2 px-4">Plate Number</th>
+              {context?.user?.role === 'admin' && <th className="py-2 px-4">Owner</th>}
             </tr>
           </thead>
           <tbody>
             {vehicles.map(vehicle => (
               <tr key={vehicle.id} className="border-t">
                 <td className="py-2 px-4">{vehicle.plateNumber}</td>
+                {context?.user?.role === 'admin' && (
+                  <td className="py-2 px-4">{vehicle.user ? `${vehicle.user.firstName} ${vehicle.user.lastName}` : 'N/A'}</td>
+                )}
               </tr>
             ))}
           </tbody>

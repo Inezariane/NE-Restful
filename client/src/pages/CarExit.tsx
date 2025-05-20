@@ -17,7 +17,16 @@ function CarExit() {
   const context = useContext(AuthContext);
   const navigate = useNavigate();
 
-  const currentDateTime = new Date('2025-05-20T12:40:00+02:00'); // Current time: 12:40 PM CAT, May 20, 2025
+  const currentDateTime = new Date('2025-05-20T13:38:00+02:00'); // Current time: 01:38 PM CAT, May 20, 2025
+
+  useEffect(() => {
+    if (!context) throw new Error('AuthContext must be used within an AuthProvider');
+    const { user } = context;
+    if (!user || user.role !== 'admin') {
+      setError('Access denied: Only admins can record car exits');
+      return;
+    }
+  }, [context]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -44,6 +53,8 @@ function CarExit() {
       setError(err.response?.data?.error || 'Failed to record car exit');
     }
   };
+
+  if (error && (!context?.user || context.user.role !== 'admin')) return <p className="text-red-500 text-center">{error}</p>;
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-gray-100">
@@ -93,4 +104,4 @@ function CarExit() {
   );
 }
 
-export default CarExit
+export default CarExit;

@@ -21,6 +21,11 @@ function MyTickets() {
 
   useEffect(() => {
     if (!context) throw new Error('AuthContext must be used within an AuthProvider');
+    const { user } = context;
+    if (!user || user.role !== 'user') {
+      setError('Access denied: Only users can view their tickets');
+      return;
+    }
     const fetchTickets = async () => {
       try {
         const response = await axios.get(
@@ -35,6 +40,8 @@ function MyTickets() {
     };
     fetchTickets();
   }, [context, page]);
+
+  if (error && (!context?.user || context.user.role !== 'user')) return <p className="text-red-500 text-center">{error}</p>;
 
   return (
     <div className="p-4">

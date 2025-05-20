@@ -58,7 +58,7 @@ function ParkingList() {
                 <td className="py-2 px-4">{parking.name}</td>
                 <td className="py-2 px-4">{parking.availableSpaces}/{parking.totalSpaces}</td>
                 <td className="py-2 px-4">{parking.location}</td>
-                <td className="py-2 px-4">${parking.feePerHour}</td>
+                <td className="py-2 px-4">RWF{parking.feePerHour}</td>
               </tr>
             ))}
           </tbody>
