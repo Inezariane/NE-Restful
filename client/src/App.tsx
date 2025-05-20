@@ -1,56 +1,39 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
-import { useState } from 'react';
-import Login from './components/Login';
-import Register from './components/Register';
-import UserDashboard from './components/UserDashboard';
-import AdminDashboard from './components/AdminDashboard';
+import { Routes, Route } from 'react-router-dom';
 import Navbar from './components/Navbar';
+import Home from './pages/Home';
+import Register from './pages/Register';
+import Login from './pages/Login';
+import ParkingList from './pages/ParkingList';
+import ParkingForm from './pages/ParkingForm';
+import CarEntry from './pages/CarEntry';
+import CarExit from './pages/CarExit';
+import Reports from './pages/Reports';
+import VehicleForm from './pages/VehicleForm';
+import VehicleList from './pages/VehicleList';
+import MyTickets from './pages/MyTickets';
+import { AuthProvider } from './context/AuthContext';
 
-interface User {
-  id: string;
-  username: string;
-  role: 'user' | 'admin';
-  plate_number: string | null;
-}
-
-const App: React.FC = () => {
-  const [user, setUser] = useState<User | null>(JSON.parse(localStorage.getItem('user') || 'null'));
-  const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
-
-  const handleLogin = (userData: User, tokenData: string) => {
-    setUser(userData);
-    setToken(tokenData);
-    localStorage.setItem('user', JSON.stringify(userData));
-    localStorage.setItem('token', tokenData);
-  };
-
-  const handleLogout = () => {
-    setUser(null);
-    setToken(null);
-    localStorage.removeItem('user');
-    localStorage.removeItem('token');
-  };
-
+function App() {
   return (
-    <div className="min-h-screen bg-gray-100">
-      <Navbar user={user} onLogout={handleLogout} />
-      <div className="container mx-auto p-4">
-        <Routes>
-          <Route path="/login" element={!user ? <Login onLogin={handleLogin} /> : <Navigate to={user.role === 'admin' ? '/admin' : '/dashboard'} />} />
-          <Route path="/register" element={!user ? <Register /> : <Navigate to={user.role === 'admin' ? '/admin' : '/dashboard'} />} />
-          <Route
-            path="/dashboard"
-            element={user && user.role === 'user' && token ? <UserDashboard token={token} user={user} /> : <Navigate to="/login" />}
-          />
-          <Route
-            path="/admin"
-            element={user && user.role === 'admin' && token ? <AdminDashboard token={token} /> : <Navigate to="/login" />}
-          />
-          <Route path="/" element={<Navigate to="/login" />} />
-        </Routes>
+    <AuthProvider>
+      <div className="min-h-screen bg-gray-100">
+        <Navbar />
+        <div className="container mx-auto p-4">
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/register" element={<Register />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/parkings" element={<ParkingList />} />
+            <Route path="/parkings/new" element={<ParkingForm />} />
+            <Route path="/records/entry" element={<CarEntry />} />
+            <Route path="/records/exit" element={<CarExit />} />
+            <Route path="/reports" element={<Reports />} />
+            <Route path="/vehicles/new" element={<VehicleForm />} />
+            <Route path="/vehicles" element={<VehicleList />} />
+            <Route path="/tickets" element={<MyTickets />} />
+          </Routes>
+        </div>
       </div>
-    </div>
+    </AuthProvider>
   );
-};
-
-export default App;
+}

@@ -11,7 +11,15 @@ const router = express.Router();
 router.post('/entry', [
   auth(['admin']),
   body('vehicleId').isUUID(),
-  body('parkingId').isUUID()
+  body('parkingId').isUUID(),
+  body('entryDateTime').isISO8601().toDate().custom((value) => {
+    const entryTime = new Date(value);
+    const now = new Date();
+    if (entryTime > now) {
+      throw new Error('Entry time cannot be in the future');
+    }
+    return true;
+  })
 ], async (req, res, next) => {
   try {
     const errors = validationResult(req);
@@ -19,7 +27,7 @@ router.post('/entry', [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { vehicleId, parkingId } = req.body;
+    const { vehicleId, parkingId, entryDateTime } = req.body;
     const vehicle = await models.Vehicle.findByPk(vehicleId);
     if (!vehicle) {
       return res.status(404).json({ error: 'Vehicle not found' });
@@ -39,11 +47,13 @@ router.post('/entry', [
       vehicleId,
       parkingId,
       userId: vehicle.userId,
-      ticketNumber
+      ticketNumber,
+      entryDateTime: new Date(entryDateTime)
     });
 
     await parking.update({ availableSpaces: parking.availableSpaces - 1 });
 
+    logger.info(`Car entry recorded: Ticket ${ticketNumber}, Vehicle ${vehicle.plateNumber}`);
     res.status(201).json({ record, ticket: { ticketNumber } });
   } catch (error) {
     logger.error(`Car entry error: ${error.message}`);
@@ -54,7 +64,15 @@ router.post('/entry', [
 // Register car exit
 router.post('/exit', [
   auth(['admin', 'user']),
-  body('ticketNumber').notEmpty().trim()
+  body('ticketNumber').notEmpty().trim(),
+  body('exitDateTime').isISO8601().toDate().custom((value, { req }) => {
+    const exitTime = new Date(value);
+    const now = new Date();
+    if (exitTime > now) {
+      throw new Error('Exit time cannot be in the future');
+    }
+    return true;
+  })
 ], async (req, res, next) => {
   try {
     const errors = validationResult(req);
@@ -62,7 +80,7 @@ router.post('/exit', [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { ticketNumber } = req.body;
+    const { ticketNumber, exitDateTime } = req.body;
     const record = await models.ParkingRecord.findOne({
       where: { ticketNumber },
       include: [{ model: models.Parking, as: 'parking' }]
@@ -76,12 +94,16 @@ router.post('/exit', [
       return res.status(400).json({ error: 'Car already exited' });
     }
 
-    const exitDateTime = new Date();
-    const hoursParked = (exitDateTime - record.entryDateTime) / (1000 * 60 * 60);
+    const exitTime = new Date(exitDateTime);
+    if (exitTime <= record.entryDateTime) {
+      return res.status(400).json({ error: 'Exit time must be after entry time' });
+    }
+
+    const hoursParked = (exitTime - record.entryDateTime) / (1000 * 60 * 60);
     const chargedAmount = (hoursParked * record.parking.feePerHour).toFixed(2);
 
     await record.update({
-      exitDateTime,
+      exitDateTime: exitTime,
       chargedAmount
     });
 
@@ -89,6 +111,7 @@ router.post('/exit', [
       availableSpaces: record.parking.availableSpaces + 1
     });
 
+    logger.info(`Car exit recorded: Ticket ${ticketNumber}, Charged $${chargedAmount}`);
     res.json({
       record,
       bill: {

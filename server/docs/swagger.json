@@ -217,9 +217,10 @@
                 "type": "object",
                 "properties": {
                   "vehicleId": { "type": "string", "format": "uuid" },
-                  "parkingId": { "type": "string", "format": "uuid" }
+                  "parkingId": { "type": "string", "format": "uuid" },
+                  "entryDateTime": { "type": "string", "format": "date-time" }
                 },
-                "required": ["vehicleId", "parkingId"]
+                "required": ["vehicleId", "parkingId", "entryDateTime"]
               }
             }
           }
@@ -245,9 +246,10 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "ticketNumber": { "type": "string" }
+                  "ticketNumber": { "type": "string" },
+                  "exitDateTime": { "type": "string", "format": "date-time" }
                 },
-                "required": ["ticketNumber"]
+                "required": ["ticketNumber", "exitDateTime"]
               }
             }
           }
