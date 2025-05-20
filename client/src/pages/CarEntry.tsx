@@ -27,8 +27,6 @@ function CarEntry() {
   const context = useContext(AuthContext);
   const navigate = useNavigate();
 
-  const currentDateTime = new Date('2025-05-20T13:45:00+02:00'); // Current time: 01:45 PM CAT, May 20, 2025
-
   useEffect(() => {
     if (!context) {
       throw new Error('AuthContext must be used within an AuthProvider');
@@ -65,11 +63,6 @@ function CarEntry() {
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const entryTime = new Date(formData.entryDateTime);
-    if (entryTime > currentDateTime) {
-      setError('Entry time cannot be in the future');
-      return;
-    }
     try {
       const response = await axios.post<ResponseData>(
         'http://localhost:3001/api/records/entry',
@@ -83,7 +76,7 @@ function CarEntry() {
       const ticketNumber = response.data.ticket.ticketNumber;
       setSuccess(`Car entry recorded successfully! Ticket Number: ${ticketNumber}`);
       setError('');
-      setFormData({ vehicleId: '', parkingId: '', entryDateTime: '' }); // Clear form
+      setFormData({ vehicleId: '', parkingId: '', entryDateTime: '' }); 
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to record car entry');
       setSuccess('');
@@ -153,7 +146,6 @@ function CarEntry() {
               onChange={handleChange}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               required
-              max={currentDateTime.toISOString().slice(0, 16)}
             />
           </div>
           <button

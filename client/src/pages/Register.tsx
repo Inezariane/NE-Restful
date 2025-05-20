@@ -42,7 +42,7 @@ function Register() {
         formData.password,
         formData.role
       );
-      setFormData({ firstName: '', lastName: '', email: '', password: '', role: 'user' }); // Clear form
+      setFormData({ firstName: '', lastName: '', email: '', password: '', role: 'user' }); 
       navigate('/vehicles');
     } catch (err: any) {
       setError(err.response?.data?.error || 'Registration failed');
