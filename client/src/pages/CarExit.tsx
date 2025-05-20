@@ -14,10 +14,9 @@ function CarExit() {
     exitDateTime: ''
   });
   const [error, setError] = useState<string>('');
+  const [success, setSuccess] = useState<string>('');
   const context = useContext(AuthContext);
   const navigate = useNavigate();
-
-  const currentDateTime = new Date('2025-05-20T13:38:00+02:00'); // Current time: 01:38 PM CAT, May 20, 2025
 
   useEffect(() => {
     if (!context) throw new Error('AuthContext must be used within an AuthProvider');
@@ -34,13 +33,8 @@ function CarExit() {
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const exitTime = new Date(formData.exitDateTime);
-    if (exitTime > currentDateTime) {
-      setError('Exit time cannot be in the future');
-      return;
-    }
     try {
-      const response = await axios.post(
+      await axios.post(
         'http://localhost:3001/api/records/exit',
         {
           ticketNumber: formData.ticketNumber,
@@ -48,9 +42,12 @@ function CarExit() {
         },
         { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
       );
-      navigate('/records/exit');
+      setSuccess('Exited successfully');
+      setError('');
+      setFormData({ ticketNumber: '', exitDateTime: '' }); // Clear form
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to record car exit');
+      setSuccess('');
     }
   };
 
@@ -61,6 +58,7 @@ function CarExit() {
       <div className="w-full max-w-md bg-white p-8 rounded-lg shadow-lg">
         <h2 className="text-2xl font-bold text-center text-gray-800 mb-6">Car Exit</h2>
         {error && <p className="text-red-500 text-center mb-4">{error}</p>}
+        {success && <p className="text-green-500 text-center mb-4">{success}</p>}
         <form onSubmit={handleSubmit}>
           <div className="mb-5">
             <label className="block text-sm font-medium text-gray-700 mb-2" htmlFor="ticketNumber">
@@ -89,7 +87,6 @@ function CarExit() {
               onChange={handleChange}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               required
-              max={currentDateTime.toISOString().slice(0, 16)}
             />
           </div>
           <button
