@@ -7,6 +7,7 @@ interface FormData {
   lastName: string;
   email: string;
   password: string;
+  role: 'admin' | 'user';
 }
 
 function Register() {
@@ -14,7 +15,8 @@ function Register() {
     firstName: '',
     lastName: '',
     email: '',
-    password: ''
+    password: '',
+    role: 'user'
   });
   const [error, setError] = useState<string>('');
   const context = useContext(AuthContext);
@@ -26,7 +28,7 @@ function Register() {
 
   const { register } = context;
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
@@ -38,9 +40,9 @@ function Register() {
         formData.lastName,
         formData.email,
         formData.password,
-        'user' // Default role to 'user'
+        formData.role
       );
-      setFormData({ firstName: '', lastName: '', email: '', password: '' }); // Clear form
+      setFormData({ firstName: '', lastName: '', email: '', password: '', role: 'user' }); // Clear form
       navigate('/vehicles');
     } catch (err: any) {
       setError(err.response?.data?.error || 'Registration failed');
@@ -97,6 +99,22 @@ function Register() {
               placeholder="Enter your email"
               required
             />
+          </div>
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-700 mb-2" htmlFor="role">
+              Role
+            </label>
+            <select
+              id="role"
+              name="role"
+              value={formData.role}
+              onChange={handleChange}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              required
+            >
+              <option value="user">User</option>
+              <option value="admin">Admin</option>
+            </select>
           </div>
           <div className="mb-6">
             <label className="block text-sm font-medium text-gray-700 mb-2" htmlFor="password">
