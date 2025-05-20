@@ -9,6 +9,11 @@ interface FormData {
   entryDateTime: string;
 }
 
+interface ResponseData {
+  record: any;
+  ticket: { ticketNumber: string };
+}
+
 function CarEntry() {
   const [formData, setFormData] = useState<FormData>({
     vehicleId: '',
@@ -18,10 +23,11 @@ function CarEntry() {
   const [vehicles, setVehicles] = useState<{ id: string; plateNumber: string; user: { firstName: string; lastName: string } }[]>([]);
   const [parkings, setParkings] = useState<{ id: string; name: string }[]>([]);
   const [error, setError] = useState<string>('');
+  const [success, setSuccess] = useState<string>('');
   const context = useContext(AuthContext);
   const navigate = useNavigate();
 
-  const currentDateTime = new Date('2025-05-20T12:40:00+02:00'); // Current time: 12:40 PM CAT, May 20, 2025
+  const currentDateTime = new Date('2025-05-20T13:45:00+02:00'); // Current time: 01:45 PM CAT, May 20, 2025
 
   useEffect(() => {
     if (!context) {
@@ -65,7 +71,7 @@ function CarEntry() {
       return;
     }
     try {
-      await axios.post(
+      const response = await axios.post<ResponseData>(
         'http://localhost:3001/api/records/entry',
         {
           vehicleId: formData.vehicleId,
@@ -74,9 +80,13 @@ function CarEntry() {
         },
         { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
       );
-      navigate('/records/entry');
+      const ticketNumber = response.data.ticket.ticketNumber;
+      setSuccess(`Car entry recorded successfully! Ticket Number: ${ticketNumber}`);
+      setError('');
+      setFormData({ vehicleId: '', parkingId: '', entryDateTime: '' }); // Clear form
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to record car entry');
+      setSuccess('');
     }
   };
 
@@ -89,6 +99,7 @@ function CarEntry() {
       <div className="w-full max-w-md bg-white p-8 rounded-lg shadow-lg">
         <h2 className="text-2xl font-bold text-center text-gray-800 mb-6">Car Entry</h2>
         {error && <p className="text-red-500 text-center mb-4">{error}</p>}
+        {success && <p className="text-green-500 text-center mb-4">{success}</p>}
         <form onSubmit={handleSubmit}>
           <div className="mb-5">
             <label className="block text-sm font-medium text-gray-700 mb-2" htmlFor="vehicleId">

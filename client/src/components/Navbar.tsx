@@ -40,7 +40,7 @@ function Navbar() {
                   <Link to="/reports">Reports</Link>
                 </>
               )}
-              <button onClick={handleLogout} className="bg-red-500 px-3 py-1 rounded">Logout</button>
+              <button onClick={handleLogout} className="bg-red-400 px-3 py-1 rounded">Logout</button>
             </>
           ) : (
             <>
