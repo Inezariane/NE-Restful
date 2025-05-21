@@ -67,7 +67,7 @@ function MyTickets() {
                 <td className="py-2 px-4">{ticket.parking.name}</td>
                 <td className="py-2 px-4">{new Date(ticket.entryDateTime).toLocaleString()}</td>
                 <td className="py-2 px-4">{ticket.exitDateTime ? new Date(ticket.exitDateTime).toLocaleString() : 'N/A'}</td>
-                <td className="py-2 px-4">${ticket.chargedAmount || 'N/A'}</td>
+                <td className="py-2 px-4">RWF{ticket.chargedAmount || 'N/A'}</td>
               </tr>
             ))}
           </tbody>
